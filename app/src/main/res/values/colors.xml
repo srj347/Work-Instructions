@@ -2,4 +2,6 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="grey_chat_bg">#F5F5F5</color>
+    <color name="blue_chat_bg">#1351D8</color>
 </resources>
