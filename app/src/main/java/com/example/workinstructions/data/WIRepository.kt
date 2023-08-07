@@ -4,6 +4,7 @@ import com.example.workinstructions.model.Step
 import com.example.workinstructions.model.WorkInstruction
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.gson.Gson
+import java.lang.StringBuilder
 
 class WIRepository {
     private val COLLECTION_INNOVAPPTIVE = "innovapptive"
@@ -50,5 +51,17 @@ class WIRepository {
     private fun parseStepsFromJson(jsonString: String): List<Step> {
         val gson = Gson()
         return gson.fromJson(jsonString, Array<Step>::class.java).toList()
+    }
+
+    fun getStringFromObject(wiList: ArrayList<WorkInstruction>): String {
+        var result: StringBuilder = StringBuilder()
+        for(wi in wiList){
+            result.append("${wi.header}\n")
+            for(step in wi.steps){
+                result.append("${step.name ?: ""}. ${step.instruction?: ""}. ${step.hint?: ""}. ${step.reactionPlan?: ""} \n")
+            }
+            result.append("\n")
+        }
+        return result.toString()
     }
 }

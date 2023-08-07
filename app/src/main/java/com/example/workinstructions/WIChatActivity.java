@@ -32,6 +32,7 @@ import com.bumptech.glide.load.resource.bitmap.BitmapTransitionOptions;
 import com.bumptech.glide.request.RequestOptions;
 import com.bumptech.glide.request.target.BitmapImageViewTarget;
 import com.bumptech.glide.request.transition.Transition;
+import com.example.workinstructions.bertmodel.BertQaHelper;
 import com.example.workinstructions.data.PromptManager;
 import com.example.workinstructions.data.RepositoryWI;
 import com.example.workinstructions.data.WIRepository;
@@ -50,6 +51,7 @@ import com.karumi.dexter.listener.single.PermissionListener;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.tensorflow.lite.task.text.qa.QaAnswer;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -58,6 +60,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
@@ -72,7 +75,7 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 
 
-public class WIChatActivity extends AppCompatActivity {
+public class WIChatActivity extends AppCompatActivity implements BertQaHelper.AnswererListener {
     RecyclerView recyclerView;
     TextView welcomeTextView, textAttachedTv;
     EditText messageEditText;
@@ -91,6 +94,9 @@ public class WIChatActivity extends AppCompatActivity {
 
     WIRepository wiRepository;
     List<WorkInstruction> workInstructionList;
+
+    // BERT
+    BertQaHelper bertQaHelper;
 
     @SuppressLint("MissingInflatedId")
     @Override
@@ -111,34 +117,20 @@ public class WIChatActivity extends AppCompatActivity {
 
         initRecyclerView();
         fetchLocalWI();
+        wiRepository = new WIRepository();
+        bertQaHelper = new BertQaHelper(WIChatActivity.this, 2, 0, this);
+
         sendButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 String question = messageEditText.getText().toString().trim();
-//                generateImage(question);
-
-                if (isImage) {
-                    addToChat(bitmap, Message.SENT_BY_ME);
-                    if(!question.isEmpty()){
-                        addToChat(question, Message.SENT_BY_ME);
-                    }
-                    isImage = false;
-                    File imageFile = convertBitmapToFile(bitmap);
-                    uploadImageAndGetUploadId(imageFile);
-                    uploadImage.setImageDrawable(null);
-                } else {
-                    addToChat(question, Message.SENT_BY_ME);
-                    if (false) {
-                        isWorkInstructionPresent(question);
-
-                    } else {
-                        String prompt = new PromptManager().getPrompt(question, "");
-                        callAPI(prompt, false);
-                    }
-                }
-                messageEditText.setText("");
-                messageEditText.setVisibility(View.VISIBLE);
-                disableAttachedView();
+                sendMessageByYou(question);
+                showTyping();
+//                String dataset = wiRepository.getStringFromObject(new ArrayList<>(workInstructionList));
+//                Log.d("CurrentDebugg", dataset);
+//                bertQaHelper.answer(dataset, question);
+                getResponseFromGPT(question);
+                updateViewsAfterSend();
             }
         });
 
@@ -169,6 +161,15 @@ public class WIChatActivity extends AppCompatActivity {
         });
     }
 
+    private void sendMessageByYou(String question) {
+        if(isImage){
+            addToChat(bitmap, Message.SENT_BY_ME);
+        }
+        if(!question.isEmpty()){
+            addToChat(question, Message.SENT_BY_ME);
+        }
+    }
+
     private void fetchLocalWI() {
         RepositoryWI repositoryWI = new RepositoryWI();
         repositoryWI.fetchAllWorkInstruction(
@@ -182,19 +183,14 @@ public class WIChatActivity extends AppCompatActivity {
     }
 
 
-
-    public String toJSON(Object obj){
-        return new Gson().toJson(obj);
-    }
-
     private void initRecyclerView() {
         messageAdapter = new MessageAdapter(this, messageList);
         messageAdapter.setOnItemClickListener(new MessageAdapter.OnItemClickListener() {
             @Override
             public void onItemClick(int position, Message item) {
-                String instructionFormat = "Title, Purpose, Scope, Materials and Tools, Safety Precautions, Step-by-Step Instructions, Quality Checks, Troubleshooting, Maintenance and Cleanup, Sign-off";
-                String question = "Create a " + instructionType + " for " + item.getMessage() + " in the specified format. Format: " + instructionFormat;
-                callAPI(question, false);
+//                String instructionFormat = "Title, Purpose, Scope, Materials and Tools, Safety Precautions, Step-by-Step Instructions, Quality Checks, Troubleshooting, Maintenance and Cleanup, Sign-off";
+//                String question = "Create a " + instructionType + " for " + item.getMessage() + " in the specified format. Format: " + instructionFormat;
+//                callAPI(question, false);
             }
         });
 
@@ -262,21 +258,6 @@ public class WIChatActivity extends AppCompatActivity {
         });
     }
 
-//    public void generatePrompts(String tags) {
-//        runOnUiThread(new Runnable() {
-//            @Override
-//            public void run() {
-//                previousTags = tags;
-//                generateTitle(tags);
-//            }
-//        });
-//    }
-//
-//    public void generateTitle(String tags) {
-//        String question = "Take all " + tags + "to consideration and generate 5 most relevant titles";
-//        callAPI(question, true);
-//    }
-
     public String parseJsonAndGetFirstTwoEnValues(String jsonString) {
         try {
             JSONObject jsonObject = new JSONObject(jsonString);
@@ -340,7 +321,6 @@ public class WIChatActivity extends AppCompatActivity {
     }
 
     void addResponse(String response) {
-        messageList.remove(messageList.size() - 1);
         addToChat(response, Message.SENT_BY_BOT);
     }
 
@@ -358,59 +338,11 @@ public class WIChatActivity extends AppCompatActivity {
         RequestBody body = RequestBody.create(jsonBody.toString(), JSON);
         Request request = new Request.Builder()
                 .url("https://api.openai.com/v1/completions")
-                .header("Authorization", "Bearer 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")
+                .header("Authorization", "Bearer " + new PromptManager().getGPT_API_KEY())
                 .post(body)
                 .build();
 
         return request;
-    }
-
-    private void isWorkInstructionPresent(String question) {
-        if(workInstructionList == null){
-            Toast.makeText(WIChatActivity.this, "WI LIST is null", Toast.LENGTH_SHORT).show();
-            return ;
-        }
-        String questionJSON = "{\"question\":" + "\""+ question + "\"" + "}";
-
-        String input = questionJSON + "\n" + toJSON(workInstructionList);
-        String output = "[\n" +
-                "{\n" +
-                "    \"CONFIDENCE_SCORE\": \"\",\n" +
-                "    \"STEP\": \"\",\n" +
-                "    \"INSTRUCTIONS\":\"\"\n" +
-                "  }\n" +
-                "]";
-        String task =
-                "1. Use the provided Above JSON data and Extract all the 'STEP' and 'INSTRUCTIONS' related to the question from the JSON. \n" +
-                "2. Calculate the confidence score for each 'STEP' and 'INSTRUCTIONS', in the entire JSON, based on \"HOW WELL IT ANSWERS THE QUESTION\".\n" +
-                "3. Return the json array in the below \"Output Format\". (No code or explanation is needed, return only the output in the below format).";
-
-        String prompt = new PromptManager().generatePrompt(task, input, output);
-
-        callAPI(prompt, false);
-//        Request request = getApiRequest(prompt);
-//
-//        client.newCall(request).enqueue(new Callback() {
-//            @Override
-//            public void onFailure(@NonNull Call call, @NonNull IOException e) {
-//                addResponse("Failed to load response due to " + e.getMessage());
-//            }
-//
-//            @Override
-//            public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-//                if(response.isSuccessful()){
-//                    JSONObject jsonObject = null;
-//                    try{
-//                        jsonObject = new JSONObject(response.body().string());
-//                        Toast.makeText(WIChatActivity.this, jsonObject.toString(), Toast.LENGTH_SHORT).show();
-//                        addResponse(jsonObject.toString());
-//                    } catch (JSONException e) {
-//                        e.printStackTrace();
-//                    }
-//
-//                }
-//            }
-//        });
     }
 
     void generateImage(String prompt) {
@@ -425,7 +357,7 @@ public class WIChatActivity extends AppCompatActivity {
         RequestBody body = RequestBody.create(jsonBody.toString(), JSON);
         Request request = new Request.Builder()
                 .url("https://api.openai.com/v1/images/generations")
-                .header("Authorization", "Bearer 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")
+                .header("Authorization", "Bearer " + new PromptManager().getGPT_API_KEY())
                 .post(body)
                 .build();
 
@@ -459,8 +391,8 @@ public class WIChatActivity extends AppCompatActivity {
                                                 @Override
                                                 public void onResourceReady(Bitmap bitmap, Transition<? super Bitmap> transition) {
                                                     Log.d("CurrentDebugg", bitmap.toString());
-//                                                    uploadImage.setVisibility(View.VISIBLE);
-//                                                    uploadImage.setImageBitmap(bitmap);
+                                                    addToChat(prompt,Message.SENT_BY_BOT);
+                                                    addToChat(bitmap, Message.SENT_BY_BOT);
                                                 }
                                             });
                                 }
@@ -476,12 +408,21 @@ public class WIChatActivity extends AppCompatActivity {
         });
     }
 
+    void showTyping(){
+        messageList.add(new Message("Typing... ", Message.SENT_BY_BOT));
+    }
+
+    void removeTyping(){
+        messageList.remove(messageList.size() - 1);
+    }
+
+    void updateViewsAfterSend(){
+        messageEditText.setText("");
+        messageEditText.setVisibility(View.VISIBLE);
+        disableAttachedView();
+    }
+
     void callAPI(String question, Boolean isTitle) {
-        //okhttp
-        if (!isTitle) {
-            messageList.add(new Message("Typing... ", Message.SENT_BY_BOT));
-//            messageAdapter.notifyDataSetChanged();
-        }
         client.newCall(getApiRequest(question)).enqueue(new Callback() {
             @Override
             public void onFailure(@NonNull Call call, @NonNull IOException e) {
@@ -496,21 +437,20 @@ public class WIChatActivity extends AppCompatActivity {
                         jsonObject = new JSONObject(response.body().string());
                         JSONArray jsonArray = jsonObject.getJSONArray("choices");
                         String result = jsonArray.getJSONObject(0).getString("text");
-                        if (isTitle) {
-                            String[] titles = generatePoints(result);
-                            for (String title : titles) {
-                                if (title.length() > 2) {
-                                    addToChat(title, Message.SENT_AS_PROMPT);
-                                }
-                            }
+//                        addResponse(result.trim());
+                        Log.d("CurrentDebugg", "RESPONSE: " + response.toString());
 
-                        } else {
-                            addResponse(result.trim());
-                            Log.d("CurrentDebugg", "RESPONSE: " + response.toString());
+                        List<String> stepList = JsonParser.parseJsonAndGetSteps(result);
+                        for(String step : stepList) {
+                            generateImage(step);
+                            Thread.sleep(8000);
+                            progressDialog.dismiss();
                         }
 
                     } catch (JSONException e) {
                         e.printStackTrace();
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
                     }
                 } else {
                     addResponse("Failed to load response due to " + response.body().string());
@@ -570,7 +510,7 @@ public class WIChatActivity extends AppCompatActivity {
                 .asBitmap()
                 .load(url)
                 .transition(BitmapTransitionOptions.withCrossFade())
-                .into(new BitmapImageViewTarget(uploadImage) {
+                .into(new BitmapImageViewTarget(imgAttachedIv) {
                     @Override
                     public void onResourceReady(Bitmap resource, Transition<? super Bitmap> transition) {
                         super.onResourceReady(resource, transition);
@@ -592,8 +532,11 @@ public class WIChatActivity extends AppCompatActivity {
 
         // Create the OkHttp client
         OkHttpClient client = new OkHttpClient();
+
+        messageList.add(new Message("Typing... ", Message.SENT_BY_BOT));
         progressDialog = new MyProgressDialog(this);
         progressDialog.show();
+
 
         // Create the request body with the image file
         RequestBody requestBody = new MultipartBody.Builder()
@@ -643,5 +586,43 @@ public class WIChatActivity extends AppCompatActivity {
             }
         });
 
+    }
+
+    @Override
+    public void onError(@NonNull String error) {
+        Log.d("CurrentDebugg", "BERT ERROR "+ error);
+        getResponseFromGPT(messageEditText.getText().toString());
+    }
+
+    @Override
+    public void onResults(@Nullable List<? extends QaAnswer> results, long inferenceTime) {
+        if(results.isEmpty()){
+            getResponseFromGPT(messageEditText.getText().toString());
+            return;
+        }
+
+        removeTyping();
+
+        Collections.sort(results, (a, b) -> {
+            return (int) (b.pos.logit - a.pos.logit);
+        });
+
+        addToChat(results.get(0).text.trim(), Message.SENT_BY_BOT);
+
+//        for(QaAnswer answer: results){
+//            Log.d("CurrentDebugg", "BEST SUCCESS "+ answer.text + " " + answer.pos.logit);
+////
+//        }
+    }
+
+    public void getResponseFromGPT(String question){
+        if (isImage) {
+            isImage = false;
+            uploadImageAndGetUploadId(convertBitmapToFile(bitmap));
+//            uploadImage.setImageDrawable(null);
+        } else {
+            String prompt = new PromptManager().getPrompt(question, "");
+            callAPI(prompt, false);
+        }
     }
 }

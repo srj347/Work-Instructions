@@ -3,6 +3,7 @@ package com.example.workinstructions
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
+import android.widget.Button
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -21,6 +22,15 @@ class WIActivity : AppCompatActivity(), OnItemClickListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_wiactivity)
+
+        val btnStart: Button = findViewById(R.id.btn_start)
+        btnStart.setOnClickListener {
+            // Your click event logic here
+            // For example, show a toast message
+            onItemClick(0);
+
+
+        }
 
         wiRecyclerView = findViewById(R.id.wi_recycler)
 

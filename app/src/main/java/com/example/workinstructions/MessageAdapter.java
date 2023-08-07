@@ -39,7 +39,6 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MyViewHo
         if(message.getSentBy().equals(Message.SENT_BY_ME)){
             holder.leftChatView.setVisibility(View.GONE);
             holder.rightChatView.setVisibility(View.VISIBLE);
-            holder.suggestedByGPT.setVisibility(View.GONE);
             if(message.getImage()!=null){
                 holder.uploadImageUser.setImageBitmap(message.getImage());
             }else{
@@ -48,8 +47,8 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MyViewHo
         }else{
             holder.rightChatView.setVisibility(View.GONE);
             holder.leftChatView.setVisibility(View.VISIBLE);
-            holder.suggestedByGPT.setVisibility(View.VISIBLE);
             holder.leftTextView.setText(message.getMessage());
+            holder.uploadImageBot.setImageBitmap(message.getImage());
         }
     }
 
@@ -72,7 +71,6 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MyViewHo
             rightTextView = itemView.findViewById(R.id.right_chat_text_view);
             uploadImageBot = itemView.findViewById(R.id.upload_image_bot);
             uploadImageUser = itemView.findViewById(R.id.upload_image_user);
-            suggestedByGPT = itemView.findViewById(R.id.by_api);
             itemView.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
